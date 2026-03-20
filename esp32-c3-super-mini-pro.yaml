@@ -1,0 +1,34 @@
+esphome:
+  name: outdoor-node-c3
+  on_boot:
+    priority: 300
+    then:
+      - lambda: |-
+          ESP_LOGI("custom", "Peer MAC: F0:F5:BD:76:1F:A0");
+          ESP_LOGI("custom", "Channel: 10");
+
+esp32:
+  board: esp32-c3-devkitm-1
+  variant: esp32c3
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+
+espnow:
+  channel: 10
+
+packet_transport:
+  - platform: espnow
+    sensors:
+      - temperature
+
+sensor:
+  - platform: template
+    name: "Temperature"
+    id: temperature
+    unit_of_measurement: "°C"
+    update_interval: 5s
+    lambda: |-
+      return 22.7;
