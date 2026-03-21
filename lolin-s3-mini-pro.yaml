@@ -1,0 +1,177 @@
+esphome:
+  name: lolin-s3-mini-pro
+  platformio_options:
+    build_flags:
+      - -DARDUINO_USB_CDC_ON_BOOT=1
+      - -DARDUINO_USB_MODE=1
+  on_boot:
+    priority: 800
+    then:
+      - switch.turn_on: pwr_switch
+      - delay: 5s
+      - light.turn_on:
+          id: tft_backlight
+          brightness: 100%
+      - light.turn_on:
+          id: onboard_rgb
+          state: true
+          effect: "Spectrum Cycle"
+      - switch.turn_on: ac_display_light
+
+esp32:
+  board: lolin_s3_mini_pro
+  variant: esp32s3
+  framework:
+    type: arduino
+
+logger:
+  level: DEBUG
+
+wifi:
+  ssid: "nodomain.D"
+  password: "3131323335"
+
+api:
+  encryption:
+    key: "MC9zN3Y2dHBrem01eGg0bjA5OGo3NmxrczhhbnM3YmE="
+
+ota:
+  - platform: esphome
+  - platform: web_server
+
+web_server:
+  port: 80
+  version: 3
+
+output:
+  - platform: ledc
+    pin: 33
+    id: backlight_pwm_out
+
+light:
+  - platform: monochromatic
+    output: backlight_pwm_out
+    name: "TFT Backlight"
+    id: tft_backlight
+    restore_mode: ALWAYS_ON
+  - platform: esp32_rmt_led_strip
+    pin: 8
+    name: "Onboard RGB LED"
+    id: onboard_rgb
+    num_leds: 1
+    rgb_order: RGB
+    chipset: WS2812
+    rmt_symbols: 64
+    effects:
+      - addressable_rainbow:
+          name: "Spectrum Cycle"
+          speed: 10
+          width: 50
+
+spi:
+  clk_pin: 40
+  mosi_pin: 38
+
+font:
+  - file: "gfonts://Roboto"
+    id: font_large
+    size: 32
+    glyphs: '0123456789°C RDYOK'
+
+display:
+  - platform: st7735
+    model: "INITR_GREENTAB"
+    id: pro_display
+    device_width: 128
+    device_height: 128
+    cs_pin: 35
+    dc_pin: 36
+    reset_pin: 34
+    row_start: 1
+    col_start: 2
+    rotation: 0
+    eight_bit_color: true
+    invert_colors: true 
+    lambda: |-
+      if (id(api_connected).state) {
+        it.printf(64, 64, id(font_large), TextAlign::CENTER, "RDY");
+      } else {
+        it.printf(64, 64, id(font_large), TextAlign::CENTER, "OK");
+      }
+
+binary_sensor:
+  - platform: status
+    id: api_connected
+  - platform: gpio
+    pin: {number: 0, inverted: true, mode: INPUT_PULLUP}
+    name: "Hardware Blue Key"
+  - platform: gpio
+    pin: {number: 47, inverted: true, mode: INPUT_PULLUP}
+    name: "Hardware Red Key"
+  - platform: gpio
+    pin: {number: 48, inverted: true, mode: INPUT_PULLUP}
+    name: "Hardware Green Key"
+
+i2c:
+  sda: 12
+  scl: 11
+  scan: true
+
+remote_transmitter:
+  pin: 9
+  carrier_duty_percent: 50%
+  id: ir_transmitter
+  rmt_symbols: 64
+
+switch:
+  - platform: gpio
+    pin: 7
+    name: "RGB Power"
+    id: pwr_switch
+    restore_mode: ALWAYS_ON
+  - platform: gree
+    gree_id: tadiran_ac
+    light:
+      name: "AC Display Light"
+      id: ac_display_light
+
+climate:
+  - platform: gree
+    name: "Bedroom AC"
+    id: tadiran_ac
+    transmitter_id: ir_transmitter
+    model: yac1fb9
+    sensor: temp_sensor_internal
+
+# Cleaned ESP-NOW section
+espnow:
+  on_receive:
+    - logger.log:
+        format: 'Received temperature %.1f°C from %s: RSSI: %ddBm'
+        args:
+          - id(outdoor_temperature).state
+          - format_mac_address_pretty(info.src_addr).c_str()
+          - info.rx_ctrl->rssi
+  peers:
+    - "34:CD:B0:E9:5B:18"
+
+packet_transport:
+  - platform: espnow
+    providers:
+      - name: outdoor-node-c3
+
+sensor:
+  - platform: homeassistant
+    name: "Indoor Temperature"
+    entity_id: sensor.current_temperature
+    id: temp_sensor_internal
+
+  # Only one external sensor now
+  - platform: packet_transport
+    id: outdoor_temperature
+    provider: outdoor-node-c3
+    remote_id: temperature
+    name: "Outdoor Temperature"
+    internal: false
+    accuracy_decimals: 1
+        
