@@ -1,12 +1,18 @@
 esphome:
   name: outdoor-node-c3
+  platformio_options:
+    build_flags:
+      - -DARDUINO_USB_CDC_ON_BOOT=1
+      - -DARDUINO_USB_MODE=1
   on_boot:
     priority: 300
     then:
+      - script.execute: triple_blink
+      - delay: 200ms # Give some time for the script to finish completely
+      - switch.turn_off: c3_led_pin # Ensure LED is off after boot blink
       - lambda: |-
           ESP_LOGI("custom", "Peer MAC: F0:F5:BD:76:1F:A0");
           ESP_LOGI("custom", "Channel: 10");
-
 
 esp32:
   board: esp32-c3-devkitm-1
@@ -38,7 +44,9 @@ espnow:
 
 switch:
   - platform: gpio
-    pin: GPIO8
+    pin:
+      number: GPIO8
+      inverted: true
     id: c3_led_pin
     name: "C3 LED"
 
@@ -57,3 +65,14 @@ sensor:
     update_interval: 15s
     lambda: |-
       return (float)esp_random() / 4294967295.0 * (30.0 - 16.0) + 16.0;
+
+script:
+  - id: triple_blink
+    then:
+      - repeat:
+          count: 3
+          then:
+            - switch.turn_on: c3_led_pin
+            - delay: 100ms
+            - switch.turn_off: c3_led_pin
+            - delay: 100ms
