@@ -134,6 +134,23 @@ switch:
     light:
       name: "AC Display Light"
       id: ac_display_light
+  - platform: template
+    name: "C3 LED Control"
+    id: c3_led_control
+    turn_on_action:
+      - espnow.send:
+          address: 34:CD:B0:E9:5B:18
+          data: !lambda |-
+            std::string data = "0" ;
+            unsigned char* buffer = (unsigned char*)data.c_str();
+            return std::vector<unsigned char>(buffer, buffer + data.length() + 1);
+    turn_off_action:
+      - espnow.send:
+          address: 34:CD:B0:E9:5B:18
+          data: !lambda |-
+            std::string data = "." ;
+            unsigned char* buffer = (unsigned char*)data.c_str();
+            return std::vector<unsigned char>(buffer, buffer + data.length() + 1);
 
 climate:
   - platform: gree
@@ -145,6 +162,7 @@ climate:
 
 # Cleaned ESP-NOW section
 espnow:
+
   on_receive:
     - logger.log:
         format: 'Received temperature %.1f°C from %s: RSSI: %ddBm'
