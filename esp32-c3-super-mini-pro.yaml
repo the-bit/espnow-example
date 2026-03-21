@@ -7,6 +7,7 @@ esphome:
           ESP_LOGI("custom", "Peer MAC: F0:F5:BD:76:1F:A0");
           ESP_LOGI("custom", "Channel: 10");
 
+
 esp32:
   board: esp32-c3-devkitm-1
   variant: esp32c3
@@ -18,9 +19,32 @@ logger:
 
 espnow:
   channel: 10
+  peers:
+    - "F0:F5:BD:76:1F:A0"
+  on_receive:
+    - logger.log:
+        format: 'Received "%s" from %s: RSSI: %ddBm'
+        args:
+          - data
+          - format_mac_address_pretty(info.src_addr).c_str()
+          - info.rx_ctrl->rssi
+    - lambda: |-
+        const char * command = (const char *)data;
+        if (strlen(command) == 1 && command[0] == 'H') {
+          id(c3_led_pin).turn_on();
+        } else if (strlen(command) == 1 && command[0] == 'L') {
+          id(c3_led_pin).turn_off();
+        }
+
+switch:
+  - platform: gpio
+    pin: GPIO8
+    id: c3_led_pin
+    name: "C3 LED"
 
 packet_transport:
   - platform: espnow
+    peer_address: "F0:F5:BD:76:1F:A0"
     sensors:
       - temperature
 
@@ -29,6 +53,7 @@ sensor:
     name: "Temperature"
     id: temperature
     unit_of_measurement: "°C"
-    update_interval: 5s
+    accuracy_decimals: 1
+    update_interval: 15s
     lambda: |-
-      return 22.7;
+      return (float)esp_random() / 4294967295.0 * (30.0 - 16.0) + 16.0;
