@@ -100,16 +100,18 @@ light:
     id: tft_backlight
     restore_mode: ALWAYS_ON
   - platform: esp32_rmt_led_strip
-    name: "Onboard RGB LED"
+    # Pin 8 for Lolin S3 Mini Pro
     pin: 8
-    id: onboard_rgb
     num_leds: 1
-    rgb_order: GRB
+    id: onboard_rgb
+    name: "Onboard RGB LED"
+    rgb_order: RGB
     rmt_symbols: 64
-    chipset: WS2812       # Explicit chipset
+    chipset: WS2812
+    # Setting transition to 0s to avoid RMT timing conflicts during updates
     default_transition_length: 0s
-    # Added to ensure it stays off unless told otherwise
     restore_mode: ALWAYS_OFF
+    gamma_correct: 1.0
 
 spi:
   clk_pin: 40
