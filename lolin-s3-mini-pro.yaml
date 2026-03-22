@@ -1,21 +1,66 @@
+substitutions:
+  # Device metadata
+  node_name: "lolin-s3-mini-pro" # ${node_name}
+  friendly_name: "Bedroom Control Hub" # ${friendly_name}
+  
+  # Sensor settings
+  gyro_name: "Lolin IMU"
+  gyro_id: "qmi_sensor"
+  update_interval: "20s" # ${update_interval}
+  # Offset to compensate for internal ESP32 heating
+  temp_offset: "-3.0"
+
+  # Font sizes
+  font_size_huge: "48"    # New big font for temperature
+  font_size_large: "32"   # Original size
+  font_size_medium: "22"  # ~70% of original
+  font_size_small: "16"   # ~50% of original (for OK/RDY)  
+
+# External component with explicit branch reference
+external_components:
+  - source: components/esphome-qmi8658/components
+    components: [ qmi8658 ]
+
+# The main QMI8658 component
+qmi8658:
+  id: imu_sensor # Required, can be any valid ID (e.g., imu, my_sensor)
+  address: 0x6B # Optional, 0x6B is default
+  update_interval: ${update_interval}
+
+  # Range and ODR configuration (all optional)
+  # accel_range: 2G # Options: 2G, 4G, 8G, 16G
+  # gyro_range: 2048DPS # Options: 16DPS, 32DPS, 64DPS, 128DPS, 256DPS, 512DPS, 1024DPS, 2048DPS
+  # accel_odr: 500HZ # Options: 8000HZ, 4000HZ, 2000HZ, 1000HZ, 500HZ, 250HZ, 125HZ, 62.5HZ, 31.25HZ
+  # gyro_odr: 500HZ # Options: 8000HZ, 4000HZ, 2000HZ, 1000HZ, 500HZ, 250HZ, 125HZ, 62.5HZ, 31.25HZ
+
 esphome:
-  name: lolin-s3-mini-pro
+  name: ${node_name}
+  friendly_name: ${friendly_name}
   platformio_options:
     build_flags:
       - -DARDUINO_USB_CDC_ON_BOOT=1
       - -DARDUINO_USB_MODE=1
+
   on_boot:
-    priority: 800
+    # Changed to 100 to run after most hardware is ready but before heavy WiFi
+    priority: 100 
     then:
+      # 1. Force LED power off-on to clear any hardware glitches
+      - switch.turn_off: pwr_switch
+      - delay: 100ms
       - switch.turn_on: pwr_switch
-      - delay: 5s
+      - delay: 200ms
+      
+      # 3. Initialize display with a small delay to avoid SPI bus congestion
+      - delay: 3s
       - light.turn_on:
           id: tft_backlight
-          brightness: 100%
-      - light.turn_on:
-          id: onboard_rgb
-          state: true
-          effect: "Spectrum Cycle"
+          brightness: 75%
+          transition_length: 1s
+      
+      # 4. Final step: Send IR command to AC
+      # Added delay to ensure remote_transmitter is fully stable
+      - delay: 2s
       - switch.turn_on: ac_display_light
 
 esp32:
@@ -28,12 +73,12 @@ logger:
   level: DEBUG
 
 wifi:
-  ssid: "nodomain.D"
-  password: "3131323335"
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
 
 api:
   encryption:
-    key: "MC9zN3Y2dHBrem01eGg0bjA5OGo3NmxrczhhbnM3YmE="
+    key: !secret api_encryption_key
 
 ota:
   - platform: esphome
@@ -55,28 +100,49 @@ light:
     id: tft_backlight
     restore_mode: ALWAYS_ON
   - platform: esp32_rmt_led_strip
-    pin: 8
     name: "Onboard RGB LED"
+    pin: 8
     id: onboard_rgb
     num_leds: 1
-    rgb_order: RGB
-    chipset: WS2812
+    rgb_order: GRB
     rmt_symbols: 64
-    effects:
-      - addressable_rainbow:
-          name: "Spectrum Cycle"
-          speed: 10
-          width: 50
+    chipset: WS2812       # Explicit chipset
+    default_transition_length: 0s
+    # Added to ensure it stays off unless told otherwise
+    restore_mode: ALWAYS_OFF
 
 spi:
   clk_pin: 40
   mosi_pin: 38
 
+i2c:
+  sda: 12
+  scl: 11
+  scan: true
+
+binary_sensor:
+  - platform: status
+    id: api_connected
+  - platform: gpio
+    pin: {number: 0, inverted: true, mode: INPUT_PULLUP}
+    name: "Hardware Blue Key"
+  - platform: gpio
+    pin: {number: 47, inverted: true, mode: INPUT_PULLUP}
+    name: "Hardware Red Key"
+  - platform: gpio
+    pin: {number: 48, inverted: true, mode: INPUT_PULLUP}
+    name: "Hardware Green Key"
+
 font:
   - file: "gfonts://Roboto"
     id: font_large
-    size: 32
-    glyphs: '0123456789°C RDYOK'
+    size: ${font_size_large}
+    glyphs: '% .0123456789°C'
+
+  - file: "gfonts://Roboto"
+    id: font_small
+    size: ${font_size_small}
+    glyphs: '0123456789. °:-!%ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
 
 display:
   - platform: st7735
@@ -93,35 +159,39 @@ display:
     eight_bit_color: true
     invert_colors: true 
     lambda: |-
-      if (id(api_connected).state) {
-        it.printf(64, 64, id(font_large), TextAlign::CENTER, "RDY");
+      // 
+      if (!std::isnan(id(lolin_chip_temperature).state)) {
+        it.printf(5, 2, id(font_small), TextAlign::TOP_LEFT, "%.1f°C", id(lolin_chip_temperature).state);
+      }
+      if (id(api_connected).has_state() && id(api_connected).state) {
+        it.printf(123, 2, id(font_small), TextAlign::TOP_RIGHT, "RDY");
       } else {
-        it.printf(64, 64, id(font_large), TextAlign::CENTER, "OK");
+          it.printf(123, 2, id(font_small), TextAlign::TOP_RIGHT, "OK");
       }
 
-binary_sensor:
-  - platform: status
-    id: api_connected
-  - platform: gpio
-    pin: {number: 0, inverted: true, mode: INPUT_PULLUP}
-    name: "Hardware Blue Key"
-  - platform: gpio
-    pin: {number: 47, inverted: true, mode: INPUT_PULLUP}
-    name: "Hardware Red Key"
-  - platform: gpio
-    pin: {number: 48, inverted: true, mode: INPUT_PULLUP}
-    name: "Hardware Green Key"
-
-i2c:
-  sda: 12
-  scl: 11
-  scan: true
+      // 2. Main Temperature and Humidity in the center
+      // 64 is the horizontal center of 128px screen.
+      // Vertical position 50 is roughly the center (offset slightly for huge font)
+      if (std::isnan(id(bedroom_temperature).state)) {
+         it.printf(64, 50, id(font_large), TextAlign::CENTER, "---");
+      } else {
+         it.printf(64, 46, id(font_large), TextAlign::CENTER, "%.1f°C", id(bedroom_temperature).state);
+      }
+      if (std::isnan(id(bedroom_humidity).state)) {
+         it.printf(64, 85, id(font_large), TextAlign::CENTER, "---");
+      } else {
+         it.printf(64, 81, id(font_large), TextAlign::CENTER, "%.1f %%", id(bedroom_humidity).state);
+      }
 
 remote_transmitter:
   pin: 9
   carrier_duty_percent: 50%
   id: ir_transmitter
   rmt_symbols: 64
+  # Trigger blinks on any IR transmission
+  on_transmit:
+    then:
+      - logger.log: "No script on IR transmit"
 
 switch:
   - platform: gpio
@@ -139,14 +209,14 @@ switch:
     id: c3_led_control
     turn_on_action:
       - espnow.send:
-          address: 34:CD:B0:E9:5B:18
+          address: !secret c3_mac_address
           data: !lambda |-
             std::string data = "0" ;
             unsigned char* buffer = (unsigned char*)data.c_str();
             return std::vector<unsigned char>(buffer, buffer + data.length() + 1);
     turn_off_action:
       - espnow.send:
-          address: 34:CD:B0:E9:5B:18
+          address: !secret c3_mac_address
           data: !lambda |-
             std::string data = "." ;
             unsigned char* buffer = (unsigned char*)data.c_str();
@@ -158,12 +228,13 @@ climate:
     id: tadiran_ac
     transmitter_id: ir_transmitter
     model: yac1fb9
-    sensor: temp_sensor_internal
+    sensor: bedroom_temperature
 
 # Cleaned ESP-NOW section
 espnow:
 
   on_receive:
+    # - script.execute: blink_green_rx # Blink green on data receive
     - logger.log:
         format: 'Received temperature %.1f°C from %s: RSSI: %ddBm'
         args:
@@ -171,7 +242,7 @@ espnow:
           - format_mac_address_pretty(info.src_addr).c_str()
           - info.rx_ctrl->rssi
   peers:
-    - "34:CD:B0:E9:5B:18"
+    - !secret c3_mac_address
 
 packet_transport:
   - platform: espnow
@@ -179,10 +250,21 @@ packet_transport:
       - name: outdoor-node-c3
 
 sensor:
-  - platform: homeassistant
-    name: "Indoor Temperature"
-    entity_id: sensor.current_temperature
-    id: temp_sensor_internal
+  - platform: dht
+    pin: 37 # Replace with your actual data pin
+    model: DHT22
+    temperature:
+      name: "Bedroom Temperature" # Exposed to HA
+      id: bedroom_temperature
+    humidity:
+      name: "Bedroom Humidity" # Exposed to HA
+      id: bedroom_humidity
+    update_interval: 20s # DHT22 is slow, don't poll faster than 2s
+
+  # - platform: homeassistant
+  #   name: "Bedroom Indoor Temperature"
+  #   entity_id: sensor.bedroom_temperature
+  #   id: bedroom_temperature
 
   # Only one external sensor now
   - platform: packet_transport
@@ -192,4 +274,40 @@ sensor:
     name: "Outdoor Temperature"
     internal: false
     accuracy_decimals: 1
-        
+  
+  - platform: qmi8658
+    qmi8658_id: imu_sensor # Reference to the component
+
+    # Temperature (°C)
+    temperature:
+      name: "${gyro_name} Temperature"
+      id: "lolin_chip_temperature"
+      accuracy_decimals: 1
+      filters:
+        - offset: ${temp_offset}
+
+    # Accelerometer outputs (m/s²)
+    # accel_x:
+    #   name: "Accelerometer X"
+    # accel_y:
+    #   name: "Accelerometer Y"
+    # accel_z:
+    #   name: "Accelerometer Z"
+
+    # Gyroscope outputs (°/s)
+    # gyro_x:
+    #   name: "Gyroscope X"
+    # gyro_y:
+    #   name: "Gyroscope Y"
+    # gyro_z:
+    #   name: "Gyroscope Z"
+
+    # Tilt angles (degrees)
+    # pitch:
+    #   name: "Pitch"
+    # roll:
+    #   name: "Roll"
+
+text_sensor:
+  - platform: wifi_info
+    id: wifi_info
