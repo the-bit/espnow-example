@@ -11,8 +11,8 @@ substitutions:
   temp_offset: "-3.0"
 
   # Font sizes
-  font_size_huge: "48"    # New big font for temperature
-  font_size_large: "32"   # Original size
+  font_size_huge: "76"    # New big font for temperature
+  font_size_large: "72"   # Original size
   font_size_medium: "22"  # ~70% of original
   font_size_small: "16"   # ~50% of original (for OK/RDY)  
 
@@ -137,6 +137,11 @@ binary_sensor:
 
 font:
   - file: "gfonts://Roboto"
+    id: font_huge
+    size: ${font_size_huge}
+    glyphs: '% .0123456789°C'
+
+  - file: "gfonts://Roboto"
     id: font_large
     size: ${font_size_large}
     glyphs: '% .0123456789°C'
@@ -157,32 +162,61 @@ display:
     reset_pin: 34
     row_start: 1
     col_start: 2
-    rotation: 0
+    rotation: 270
     eight_bit_color: true
-    invert_colors: true 
+    invert_colors: true
     lambda: |-
-      // 
-      if (!std::isnan(id(lolin_chip_temperature).state)) {
-        it.printf(5, 2, id(font_small), TextAlign::TOP_LEFT, "%.1f°C", id(lolin_chip_temperature).state);
-      }
+      const uint32_t text_interval = 10000; 
+      const uint32_t color_period = 30000;  
+      
+      uint32_t now = millis();
+      // Base progress (0.0 to 1.0)
+      float p_bottom = (float)(now % color_period) / (float)color_period;
+      // Phase shift for top line: advance by 33.3%
+      float p_top = p_bottom + 0.333f;
+      if (p_top > 1.0f) p_top -= 1.0f;
+
+      auto get_rainbow = [](float p) -> Color {
+        float r = 0, g = 0, b = 0;
+        if (p < 0.333f) {
+          float ph = p / 0.333f; r = 1.0f - ph; g = ph; b = 0.0f;
+        } else if (p < 0.666f) {
+          float ph = (p - 0.333f) / 0.333f; r = 0.0f; g = 1.0f - ph; b = ph;
+        } else {
+          float ph = (p - 0.666f) / 0.334f; r = ph; g = 0.0f; b = 1.0f - ph;
+        }
+        return Color((int)(r * 255), (int)(g * 255), (int)(b * 255));
+      };
+
+      // --- DRAWING ---
+      it.fill(Color(0, 0, 0));
+
+      // 1. DUAL LINES (Top and Bottom)
+      it.filled_rectangle(2, 0, 124, 2, get_rainbow(p_top));
+      it.filled_rectangle(2, 126, 124, 2, get_rainbow(p_bottom));
+
+      // 2. STATUS (Y=5)
       if (id(api_connected).has_state() && id(api_connected).state) {
-        it.printf(123, 2, id(font_small), TextAlign::TOP_RIGHT, "RDY");
+        it.printf(126, 5, id(font_small), TextAlign::TOP_RIGHT, "RDY");
       } else {
-          it.printf(123, 2, id(font_small), TextAlign::TOP_RIGHT, "OK");
+        it.printf(126, 5, id(font_small), TextAlign::TOP_RIGHT, "OK");
+      }
+      if (!std::isnan(id(lolin_chip_temperature).state)) {
+        it.printf(2, 5, id(font_small), TextAlign::TOP_LEFT, "%.0f°", id(lolin_chip_temperature).state);
       }
 
-      // 2. Main Temperature and Humidity in the center
-      // 64 is the horizontal center of 128px screen.
-      // Vertical position 50 is roughly the center (offset slightly for huge font)
-      if (std::isnan(id(bedroom_temperature).state)) {
-         it.printf(64, 50, id(font_large), TextAlign::CENTER, "---");
+      // 3. MAIN DATA (Centered at X=64, Y=72)
+      bool show_humidity = (now / text_interval) % 2;
+      if (show_humidity) {
+        if (!std::isnan(id(bedroom_humidity).state)) {
+          // Use Font Large (72px) for Humidity
+          it.printf(64, 72, id(font_large), TextAlign::CENTER, "%.0f%%", id(bedroom_humidity).state);
+        }
       } else {
-         it.printf(64, 46, id(font_large), TextAlign::CENTER, "%.1f°C", id(bedroom_temperature).state);
-      }
-      if (std::isnan(id(bedroom_humidity).state)) {
-         it.printf(64, 85, id(font_large), TextAlign::CENTER, "---");
-      } else {
-         it.printf(64, 81, id(font_large), TextAlign::CENTER, "%.1f %%", id(bedroom_humidity).state);
+        if (!std::isnan(id(bedroom_temperature).state)) {
+          // Use Font Huge (76px) for Temperature
+          it.printf(64, 72, id(font_huge), TextAlign::CENTER, "%.0f°", id(bedroom_temperature).state);
+        }
       }
 
 remote_transmitter:
@@ -209,20 +243,21 @@ switch:
   - platform: template
     name: "C3 LED Control"
     id: c3_led_control
+    optimistic: true
     turn_on_action:
       - espnow.send:
           address: !secret c3_mac_address
           data: !lambda |-
             std::string data = "0" ;
             unsigned char* buffer = (unsigned char*)data.c_str();
-            return std::vector<unsigned char>(buffer, buffer + data.length() + 1);
+            return std::vector<unsigned char>(buffer, buffer + data.length());
     turn_off_action:
       - espnow.send:
           address: !secret c3_mac_address
           data: !lambda |-
             std::string data = "." ;
             unsigned char* buffer = (unsigned char*)data.c_str();
-            return std::vector<unsigned char>(buffer, buffer + data.length() + 1);
+            return std::vector<unsigned char>(buffer, buffer + data.length());
 
 climate:
   - platform: gree
@@ -309,6 +344,9 @@ sensor:
     #   name: "Pitch"
     # roll:
     #   name: "Roll"
+  - platform: wifi_signal
+    name: "WiFi Signal Sensor"
+    update_interval: 10s
 
 text_sensor:
   - platform: wifi_info
