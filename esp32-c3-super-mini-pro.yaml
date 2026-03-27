@@ -38,7 +38,7 @@ espnow:
         const char * command = (const char *)data;
         if (strlen(command) > 0 && command[0] == '0') {
           id(c3_led_pin).turn_on();
-        } else if (strlen(command) == 0 && command[0] == '.') {
+        } else if (strlen(command) > 0 && command[0] == '.') {
           id(c3_led_pin).turn_off();
         }
 

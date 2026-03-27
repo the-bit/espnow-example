@@ -16,6 +16,12 @@ substitutions:
   font_size_medium: "22"  # ~70% of original
   font_size_small: "16"   # ~50% of original (for OK/RDY)  
 
+globals:
+  - id: c3_led_status_internal
+    type: bool
+    restore_value: yes # Store C3 led state and set its initial value
+    initial_value: 'false'
+
 # External component with explicit branch reference
 external_components:
   - source: components/esphome-qmi8658/components
@@ -243,15 +249,24 @@ switch:
   - platform: template
     name: "C3 LED Control"
     id: c3_led_control
-    optimistic: true
+    lambda: |-
+      return id(c3_led_status_internal);
+    
     turn_on_action:
+      - globals.set:
+          id: c3_led_status_internal
+          value: 'true'
       - espnow.send:
           address: !secret c3_mac_address
           data: !lambda |-
             std::string data = "0" ;
             unsigned char* buffer = (unsigned char*)data.c_str();
             return std::vector<unsigned char>(buffer, buffer + data.length());
+          
     turn_off_action:
+      - globals.set:
+          id: c3_led_status_internal
+          value: 'false'
       - espnow.send:
           address: !secret c3_mac_address
           data: !lambda |-
