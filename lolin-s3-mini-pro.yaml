@@ -78,6 +78,9 @@ esp32:
 logger:
   level: DEBUG
 
+network:
+  enable_ipv6: false
+
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
@@ -322,10 +325,13 @@ sensor:
   - platform: packet_transport
     id: outdoor_temperature
     provider: outdoor-node-c3
-    remote_id: temperature
+    remote_id: DS1280
     name: "Outdoor Temperature"
     internal: false
     accuracy_decimals: 1
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"
   
   - platform: qmi8658
     qmi8658_id: imu_sensor # Reference to the component

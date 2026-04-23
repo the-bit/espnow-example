@@ -23,16 +23,21 @@ esp32:
 logger:
   level: DEBUG
 
+one_wire:
+  - platform: gpio
+    pin: GPIO4  # Pin 4
+
 espnow:
   channel: 10
   peers:
     - "F0:F5:BD:76:1F:A0"
   on_receive:
     - logger.log:
-        format: 'Received "%s" from %s: RSSI: %ddBm'
+        format: 'From %s received %d bytes; the first one was "%c"; RSSI: %ddBm'
         args:
-          - data
           - format_mac_address_pretty(info.src_addr).c_str()
+          - '(int)strlen((const char*)data)'
+          - '(char)data[0]'
           - info.rx_ctrl->rssi
     - lambda: |-
         const char * command = (const char *)data;
@@ -54,17 +59,22 @@ packet_transport:
   - platform: espnow
     peer_address: "F0:F5:BD:76:1F:A0"
     sensors:
-      - temperature
+      - DS1280
 
 sensor:
-  - platform: template
-    name: "Temperature"
-    id: temperature
-    unit_of_measurement: "°C"
-    accuracy_decimals: 1
-    update_interval: 15s
-    lambda: |-
-      return (float)esp_random() / 4294967295.0 * (30.0 - 16.0) + 16.0;
+  - platform: dallas_temp
+    address: 0x0f000000a6f55528 # Sensor bus address
+    name: "DS1280 Temperature Sensor"
+    id: DS1280
+
+  # - platform: template
+  #   name: "Temperature"
+  #   id: temperature
+  #   unit_of_measurement: "°C"
+  #   accuracy_decimals: 1
+  #   update_interval: 15s
+  #   lambda: |-
+  #     return (float)esp_random() / 4294967295.0 * (30.0 - 16.0) + 16.0;
 
 script:
   - id: triple_blink
