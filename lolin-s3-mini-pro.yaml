@@ -24,7 +24,7 @@ globals:
 
 # External component with explicit branch reference
 external_components:
-  - source: components/esphome-qmi8658/components
+  - source: github://Djelibeybi/esphome-qmi8658@main
     components: [ qmi8658 ]
 
 # The main QMI8658 component
@@ -282,7 +282,11 @@ climate:
     name: "Bedroom AC"
     id: tadiran_ac
     transmitter_id: ir_transmitter
-    model: yac1fb9
+    # model: yac1fb9
+    # model: yac
+    # valid options are 'generic', 'yan', 'yaa', 'yac', 'yac1fb9', 'yx1ff', 'yag'
+    # Gree switches are only supported for the yaa, yac, yan, yac1fb9 models
+    model: 'yan'
     sensor: bedroom_temperature
 
 # Cleaned ESP-NOW section
